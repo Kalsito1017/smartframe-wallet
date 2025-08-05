@@ -1,9 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.30;
-import {IAccount} from "lib/foundry-era-contracts/src/system-contracts/contracts/interfaces/IAccount.sol";
+import {IAccount, ACCOUNT_VALIDATION_SUCCESS_MAGIC} from "lib/foundry-era-contracts/src/system-contracts/contracts/interfaces/IAccount.sol";
 
 import {Transaction, MemoryTransactionHelper} from "lib/foundry-era-contracts/src/system-contracts/contracts/libraries/MemoryTransactionHelper.sol";
-
+import {SystemContractsCaller} from "lib/foundry-era-contracts/src/system-contracts/contracts/libraries/SystemContractsCaller.sol";
+import {NONCE_HOLDER_SYSTEM_CONTRACT, BOOTLOADER_FORMAL_ADDRESS, DEPLOYER_SYSTEM_CONTRACT} from "lib/foundry-era-contracts/src/system-contracts/contracts/Constants.sol";
+import {INonceHolder} from "lib/foundry-era-contracts/src/system-contracts/contracts/interfaces/INonceHolder.sol";
+import {Ownable} from "lib/openzeppelin-contracts/contracts/access/Ownable.sol";
+import {ECDSA} from "lib/openzeppelin-contracts/contracts/utils/cryptography/ECDSA.sol";
+import {Utils} from "lib/foundry-era-contracts/src/system-contracts/contracts/libraries/Utils.sol";
 contract zKMinimalAccount is IAccount {
     using MemoryTransactionHelper for Transaction;
 
@@ -13,6 +18,28 @@ contract zKMinimalAccount is IAccount {
     error ZkMinimalAccount__NotFromBootLoaderOrOwner();
     error ZkMinimalAccount__FailedToPay();
     error ZkMinimalAccount__InvalidSignature();
+    /*//////////////////////////////////////////////////////////////
+                               MODIFIERS
+    //////////////////////////////////////////////////////////////*/
+    modifier requireFromBootLoader() {
+        if (msg.sender != BOOTLOADER_FORMAL_ADDRESS) {
+            revert ZkMinimalAccount__NotFromBootLoader();
+        }
+        _;
+    }
+
+    modifier requireFromBootLoaderOrOwner() {
+        if (msg.sender != BOOTLOADER_FORMAL_ADDRESS && msg.sender != owner()) {
+            revert ZkMinimalAccount__NotFromBootLoaderOrOwner();
+        }
+        _;
+    }
+    constructor() Ownable(msg.sender) {}
+
+    receive() external payable {}
+    /*//////////////////////////////////////////////////////////////
+                           EXTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
     /**
      * @notice must increase the nonce
@@ -23,13 +50,46 @@ contract zKMinimalAccount is IAccount {
         bytes32 _txHash,
         bytes32 _suggestedSignedHash,
         Transaction calldata _transaction
-    ) external payable returns (bytes4 magic);
+    ) external payable requireFromBootLoader returns (bytes4 magic) {
+        // Call nonceholder
+        // increment nonce
+        // call(x, y, z) -> system contract call
+        SystemContractsCaller.systemCallWithPropagatedRevert( // Call the system contract to increment the nonce if it matches the transaction nonce
+                uint32(gasleft()), // Pass the remaining gas as a uint32
+                address(NONCE_HOLDER_SYSTEM_CONTRACT), // Address of the Nonce Holder system contract
+                0, // No value is sent with the call
+                abi.encodeCall( // ABI-encode the function call
+                        INonceHolder.incrementMinNonceIfEquals, // Function to increment the nonce if it equals the provided value
+                        (_transaction.nonce) // Pass the transaction's nonce as the argument
+                    )
+            );
+        // Check for fee to pay
+        uint256 totalRequiredBalance = _transaction.totalRequiredBalance(); // Calculate the total required balance for the transaction (including fees)
+        if (totalRequiredBalance > address(this).balance) {
+            // If the account's balance is less than the required amount
+            revert ZkMinimalAccount__NotEnoughBalance(); // Revert with a custom error indicating insufficient balance
+        }
+        // Check the signature
+        bytes32 txHash = _transaction.encodeHash(); // Compute the hash of the transaction for signature verification
+        address signer = ECDSA.recover(txHash, _transaction.signature); // Recover the signer address from the signature
+        bool isValidSigner = signer == owner(); // Check if the recovered signer is the owner of the account
+        if (isValidSigner) {
+            // If the signature is valid
+            magic = ACCOUNT_VALIDATION_SUCCESS_MAGIC; // Set the magic value to indicate successful validation
+        } else {
+            // If the signature is invalid
+            magic = bytes4(0); // Set the magic value to 0 to indicate failure
+        }
+        return magic; // Return the magic value to the caller
+    }
 
     function executeTransaction(
         bytes32 _txHash,
         bytes32 _suggestedSignedHash,
         Transaction calldata _transaction
-    ) external payable;
+    ) external payable requireFromBootLoaderOrOwner {
+        _executeTransaction(_transaction);
+    }
 
     // There is no point in providing possible signed hash in the `executeTransactionFromOutside` method,
     // since it typically should not be trusted.
@@ -41,11 +101,58 @@ contract zKMinimalAccount is IAccount {
         bytes32 _txHash,
         bytes32 _suggestedSignedHash,
         Transaction calldata _transaction
-    ) external payable;
+    ) external payable {}
 
     function prepareForPaymaster(
         bytes32 _txHash,
         bytes32 _possibleSignedHash,
         Transaction calldata _transaction
-    ) external payable;
+    ) external payable {
+        bool success = _transaction.payToTheBootloader();
+        if (!success) {
+            revert ZkMinimalAccount__FailedToPay();
+        }
+    }
+    /*//////////////////////////////////////////////////////////////
+                           INTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+    /**
+     * @notice Executes a transaction, either as a system contract call or a regular call.
+     * @dev Handles both system contract calls (with propagated revert) and regular contract calls.
+     *      Reverts if the call fails.
+     * @param _transaction The transaction to execute.
+     */
+    function _executeTransaction(Transaction memory _transaction) internal {
+        address to = address(uint160(_transaction.to)); // Convert the transaction's 'to' field to an address
+        uint128 value = Utils.safeCastToU128(_transaction.value); // Safely cast the transaction value to uint128
+        bytes memory data = _transaction.data; // Get the calldata for the transaction
+
+        if (to == address(DEPLOYER_SYSTEM_CONTRACT)) {
+            // Check if the destination is the deployer system contract
+            uint32 gas = Utils.safeCastToU32(gasleft()); // Safely cast the remaining gas to uint32
+            SystemContractsCaller.systemCallWithPropagatedRevert(
+                gas, // Amount of gas to forward
+                to, // Destination address
+                value, // Amount of value to send
+                data // Calldata to send
+            ); // Perform the system contract call with revert propagation
+        } else {
+            bool success; // Variable to store the result of the call
+            assembly {
+                success := call(
+                    gas(), // Forward all available gas
+                    to, // Destination address
+                    value, // Amount of value to send
+                    add(data, 0x20), // Pointer to calldata (skip the length prefix)
+                    mload(data), // Length of calldata
+                    0, // Output location (none)
+                    0 // Output size (none)
+                )
+            }
+            if (!success) {
+                // If the call failed
+                revert ZkMinimalAccount__ExecutionFailed(); // Revert with a custom error
+            }
+        }
+    }
 }
