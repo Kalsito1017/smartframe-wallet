@@ -9,7 +9,7 @@ import {INonceHolder} from "lib/foundry-era-contracts/src/system-contracts/contr
 import {Ownable} from "lib/openzeppelin-contracts/contracts/access/Ownable.sol";
 import {ECDSA} from "lib/openzeppelin-contracts/contracts/utils/cryptography/ECDSA.sol";
 import {Utils} from "lib/foundry-era-contracts/src/system-contracts/contracts/libraries/Utils.sol";
-contract zKMinimalAccount is IAccount {
+contract ZKMinimalAccount is IAccount, Ownable {
     using MemoryTransactionHelper for Transaction;
 
     error ZkMinimalAccount__NotEnoughBalance();
@@ -47,45 +47,16 @@ contract zKMinimalAccount is IAccount {
      * @notice also check to see if we have enough money in our account
      */
     function validateTransaction(
-        bytes32 _txHash,
-        bytes32 _suggestedSignedHash,
+        bytes32 /*_txHash*/,
+        bytes32 /*_suggestedSignedHash*/,
         Transaction calldata _transaction
     ) external payable requireFromBootLoader returns (bytes4 magic) {
-        // Call nonceholder
-        // increment nonce
-        // call(x, y, z) -> system contract call
-        SystemContractsCaller.systemCallWithPropagatedRevert( // Call the system contract to increment the nonce if it matches the transaction nonce
-                uint32(gasleft()), // Pass the remaining gas as a uint32
-                address(NONCE_HOLDER_SYSTEM_CONTRACT), // Address of the Nonce Holder system contract
-                0, // No value is sent with the call
-                abi.encodeCall( // ABI-encode the function call
-                        INonceHolder.incrementMinNonceIfEquals, // Function to increment the nonce if it equals the provided value
-                        (_transaction.nonce) // Pass the transaction's nonce as the argument
-                    )
-            );
-        // Check for fee to pay
-        uint256 totalRequiredBalance = _transaction.totalRequiredBalance(); // Calculate the total required balance for the transaction (including fees)
-        if (totalRequiredBalance > address(this).balance) {
-            // If the account's balance is less than the required amount
-            revert ZkMinimalAccount__NotEnoughBalance(); // Revert with a custom error indicating insufficient balance
-        }
-        // Check the signature
-        bytes32 txHash = _transaction.encodeHash(); // Compute the hash of the transaction for signature verification
-        address signer = ECDSA.recover(txHash, _transaction.signature); // Recover the signer address from the signature
-        bool isValidSigner = signer == owner(); // Check if the recovered signer is the owner of the account
-        if (isValidSigner) {
-            // If the signature is valid
-            magic = ACCOUNT_VALIDATION_SUCCESS_MAGIC; // Set the magic value to indicate successful validation
-        } else {
-            // If the signature is invalid
-            magic = bytes4(0); // Set the magic value to 0 to indicate failure
-        }
-        return magic; // Return the magic value to the caller
+        _validateTransaction(_transaction);
     }
 
     function executeTransaction(
-        bytes32 _txHash,
-        bytes32 _suggestedSignedHash,
+        bytes32 /*_txHash*/,
+        bytes32 /*_suggestedSignedHash*/,
         Transaction calldata _transaction
     ) external payable requireFromBootLoaderOrOwner {
         _executeTransaction(_transaction);
@@ -93,29 +64,102 @@ contract zKMinimalAccount is IAccount {
 
     // There is no point in providing possible signed hash in the `executeTransactionFromOutside` method,
     // since it typically should not be trusted.
+    /**
+     * @notice Executes a transaction from an external caller after validating the signature.
+     * @dev Validates the transaction signature and executes the transaction if valid.
+     *      Reverts if the signature is invalid.
+     * @param _transaction The transaction data to be executed.
+     */
     function executeTransactionFromOutside(
-        Transaction calldata _transaction
-    ) external payable;
+        Transaction calldata _transaction // The transaction data to execute
+    ) external payable {
+        bytes4 magic = _validateTransaction(_transaction); // Validate the transaction and get the magic value
+        if (magic != ACCOUNT_VALIDATION_SUCCESS_MAGIC) {
+            // Check if the validation was successful
+            revert ZkMinimalAccount__InvalidSignature(); // Revert if the signature is invalid
+        }
+        _executeTransaction(_transaction); // Execute the transaction if validation passed
+    }
 
+    /**
+     * @notice Pays the required transaction fee to the bootloader.
+     * @dev This function is called by the bootloader to transfer the necessary fee for processing the transaction.
+     *      It attempts to pay the fee using the `payToTheBootloader` method of the Transaction struct.
+     *      If the payment fails, the function reverts with a custom error.
+     * @param _txHash The hash of the transaction (for explorer and tracking purposes).
+     * @param _suggestedSignedHash The hash that may be signed by EOAs (not used in this implementation).
+     * @param _transaction The transaction data containing payment and execution details.
+     */
     function payForTransaction(
-        bytes32 _txHash,
-        bytes32 _suggestedSignedHash,
-        Transaction calldata _transaction
-    ) external payable {}
-
-    function prepareForPaymaster(
-        bytes32 _txHash,
-        bytes32 _possibleSignedHash,
+        bytes32 /*_txHash*/,
+        bytes32 /*_suggestedSignedHash*/,
         Transaction calldata _transaction
     ) external payable {
+        // Attempt to pay the bootloader for transaction processing
         bool success = _transaction.payToTheBootloader();
+        // If payment fails, revert with a custom error
         if (!success) {
             revert ZkMinimalAccount__FailedToPay();
+        }
+    }
+
+    /**
+     * @notice Prepares the account for paymaster interaction by attempting to pay the bootloader.
+     * @dev This function is called to process payment to the bootloader, typically in the context of paymaster flows.
+     *      It uses the `payToTheBootloader` method of the Transaction struct to attempt the payment.
+     *      If the payment fails, it reverts with a custom error.
+     * @param _txHash The hash of the transaction (for explorer and tracking purposes).
+     * @param _possibleSignedHash The hash that may be signed by EOAs (not used in this implementation).
+     * @param _transaction The transaction data containing payment and execution details.
+     */
+    function prepareForPaymaster(
+        bytes32 /*_txHash*/,
+        bytes32 /*_suggestedSignedHash*/, // The hash that may be signed by EOAs (not used here)
+        Transaction calldata _transaction // The transaction data
+    ) external payable {
+        bool success = _transaction.payToTheBootloader(); // Attempt to pay the bootloader for transaction processing
+        if (!success) {
+            // If payment fails
+            revert ZkMinimalAccount__FailedToPay(); // Revert with a custom error
         }
     }
     /*//////////////////////////////////////////////////////////////
                            INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+    function _validateTransaction(
+        Transaction memory _transaction
+    ) internal returns (bytes4 magic) {
+        // Call nonceholder
+        // increment nonce
+        // call(x, y, z) -> system contract call
+        SystemContractsCaller.systemCallWithPropagatedRevert(
+            uint32(gasleft()),
+            address(NONCE_HOLDER_SYSTEM_CONTRACT),
+            0,
+            abi.encodeCall(
+                INonceHolder.incrementMinNonceIfEquals,
+                (_transaction.nonce)
+            )
+        );
+
+        // Check for fee to pay
+        uint256 totalRequiredBalance = _transaction.totalRequiredBalance();
+        if (totalRequiredBalance > address(this).balance) {
+            revert ZkMinimalAccount__NotEnoughBalance();
+        }
+
+        // Check the signature
+        bytes32 txHash = _transaction.encodeHash();
+        // bytes32 convertedHash = MessageHashUtils.toEthSignedMessageHash(txHash);
+        address signer = ECDSA.recover(txHash, _transaction.signature);
+        bool isValidSigner = signer == owner();
+        if (isValidSigner) {
+            magic = ACCOUNT_VALIDATION_SUCCESS_MAGIC;
+        } else {
+            magic = bytes4(0);
+        }
+        return magic;
+    }
     /**
      * @notice Executes a transaction, either as a system contract call or a regular call.
      * @dev Handles both system contract calls (with propagated revert) and regular contract calls.
