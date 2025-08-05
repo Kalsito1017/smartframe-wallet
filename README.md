@@ -34,5 +34,6 @@ Built on top of ERC-4337 and designed for fully programmable user accounts.
 - ⛽ Native Paymaster support
 - 🧩 Easily extendable via hooks
 
-Disclaimer
+## Disclaimer
+
 This codebase is for educational purposes only and has not undergone a security review.
