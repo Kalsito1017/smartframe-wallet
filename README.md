@@ -26,7 +26,7 @@ Built on top of ERC-4337 and designed for fully programmable user accounts.
 - **zkSync Contracts** (via `foundry-era-contracts`) for zk-rollup compatibility
 - **forge-std** for testing utilities
 - **foundry-devops** for deployment scripting
-- **Use --system-mode = true and via-ir = true
+- **Use** --system-mode = true and via-ir = true
 
 ---
 
