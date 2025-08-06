@@ -54,13 +54,6 @@ lib/
 ----
 └── openzeppelin-contracts # OpenZeppelin contract library
 
-scripts/
-├── DeployZkMinimal.ts # zkSync minimal deployment script
-----
-├── EncryptKey.ts # Encryption utility
-----
-└── SendAATx.ts # Send Account Abstraction transaction script
-
 
 ---
 
