@@ -3,4 +3,18 @@
 src = "src"
 out = "out"
 libs = ["lib"]
+via-ir = true
+optimizer = true
+fs_permissions = [
+    { access = "read", path = "./broadcast" },
+    { access = "read", path = "./reports" },
+]
+[profile.default.zksolc]
+version = '1.3.13'
+via-ir = true
+optimizer = true
+fs_permissions = [
+    { access = "read", path = "./broadcast" },
+    { access = "read", path = "./reports" },
+]
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
