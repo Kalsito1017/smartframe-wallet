@@ -44,14 +44,20 @@ Built on top of ERC-4337 and designed for fully programmable user accounts.
 
 lib/
 ├── account-abstraction # ERC-4337 contracts (v0.7.0)
+----
 ├── forge-std # Foundry standard library
+----
 ├── foundry-devops # Deployment scripting toolkit
+----
 ├── foundry-era-contracts # zkSync-compatible contracts
+----
 └── openzeppelin-contracts # OpenZeppelin contract library
 
 scripts/
 ├── DeployZkMinimal.ts # zkSync minimal deployment script
+----
 ├── EncryptKey.ts # Encryption utility
+----
 └── SendAATx.ts # Send Account Abstraction transaction script
 
 
