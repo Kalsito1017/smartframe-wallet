@@ -19,10 +19,13 @@ Built on top of ERC-4337 and designed for fully programmable user accounts.
 ## 🛠️ Tech Stack
 
 - **Solidity 0.8.x**
-- **ERC-4337** compliant interfaces
-- **Foundry** or Hardhat for testing/deployment
-- **Optional Bundler integration**
-- (Optional) **AA SDK** support (e.g., eth-infinitism, Biconomy SDK)
+- **ERC-4337** compliant contracts via [`eth-infinitism/account-abstraction@v0.7.0`](https://github.com/eth-infinitism/account-abstraction)
+- **Foundry** for development and testing
+- **TypeScript** scripts for deployment and automation
+- **OpenZeppelin Contracts** for battle-tested Solidity components
+- **zkSync Contracts** (via `foundry-era-contracts`) for zk-rollup compatibility
+- **forge-std** for testing utilities
+- **foundry-devops** for deployment scripting
 
 ---
 
@@ -32,12 +35,39 @@ Built on top of ERC-4337 and designed for fully programmable user accounts.
 - 🔌 Modular plugin architecture
 - 🔐 Custom signature schemes
 - ⛽ Native Paymaster support
-- 🧩 Easily extendable via hooks
+- 🧩 Easily extendable via hooks and session logic
+- 🌀 zkSync & L2 compatibility
 
-## Disclaimer
+---
 
-This codebase is for educational purposes only and has not undergone a security review.
+## 📁 Folder Structure
 
-## You need to:
+lib/
+├── account-abstraction # ERC-4337 contracts (v0.7.0)
+├── forge-std # Foundry standard library
+├── foundry-devops # Deployment scripting toolkit
+├── foundry-era-contracts # zkSync-compatible contracts
+└── openzeppelin-contracts # OpenZeppelin contract library
 
-run rm -rf lib/account-abstraction (if you installed it without specifying a version, or if you did write your version), then run forge install eth-infinitism/account-abstraction@v0.7.0
+scripts/
+├── DeployZkMinimal.ts # zkSync minimal deployment script
+├── EncryptKey.ts # Encryption utility
+└── SendAATx.ts # Send Account Abstraction transaction script
+
+
+---
+
+## 🧪 Getting Started
+
+1. **Install dependencies:**
+
+   ```bash
+   rm -rf lib/account-abstraction
+   forge install eth-infinitism/account-abstraction@v0.7.0
+   forge install foundry-rs/forge-std
+   forge install openzeppelin/openzeppelin-contracts
+   forge install zksync-era/foundry-era-contracts
+   forge install jonasschmedtmann/foundry-devops
+
+⚠️ Disclaimer
+This codebase is for educational purposes only and has not undergone a formal security audit. Use at your own risk.
