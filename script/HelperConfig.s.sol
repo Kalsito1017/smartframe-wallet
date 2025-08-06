@@ -21,7 +21,7 @@ contract HelperConfig is Script {
     uint256 constant ZKSYNC_SEPOLIA_CHAIN_ID = 300;
     uint256 constant LOCAL_CHAIN_ID = 31337;
     // Update the BURNER_WALLET to your burner wallet!
-    address constant BURNER_WALLET = "Your Wallet Address"; //zkSyncSepolia
+    address constant BURNER_WALLET = 0x71BeB7064D6dA1E27278F3d17F0436E389D7E686; //zkSyncSepolia
     uint256 constant ARBITRUM_MAINNET_CHAIN_ID = 42_161;
     uint256 constant ZKSYNC_MAINNET_CHAIN_ID = 324;
     address constant ANVIL_DEFAULT_ACCOUNT =
@@ -82,7 +82,7 @@ contract HelperConfig is Script {
     {
         return
             NetworkConfig({
-                entryPoint: address("Your Wallet Address"),
+                entryPoint: address(0x71BeB7064D6dA1E27278F3d17F0436E389D7E686),
                 usdc: 0xAe045DE5638162fa134807Cb558E15A3F5A7F853, // Replace with actual USDC address on Sepolia if needed
                 account: BURNER_WALLET
             });
